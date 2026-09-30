@@ -10,7 +10,11 @@ Details live in `AI_HANDOFF.md`. Update both after every checkpoint.
       PostgreSQL 16 (tables, FKs, defaults, checks, RLS, anon read/insert allowed, anon update/delete refused, seed = 10 trips,
       re-runnable). NOT yet run in a real Supabase project. Becomes [x] after the owner runs the dashboard steps
       (AI_HANDOFF.md section 15) and confirms 10 seed trips + working test insert.
-- [ ] CP2 API/data layer
+- [x] CP2 API/data layer: COMPLETE (CP2.1 `src/lib/supabase.js`, CP2.2 `src/lib/identity.js`, CP2.3 `src/lib/api.js`,
+      CP2.4 `@supabase/supabase-js` added to `package.json` / `package-lock.json`). Verified locally by the owner:
+      `npm run build` passes; `npm run lint` shows only the same 2 pre-existing errors; committed as `a7f1fd4 Add Supabase API layer`;
+      working tree clean. Caveat: the API functions are not recorded as exercised against a real Supabase project yet, and no
+      page uses them (CP3 does).
 - [ ] CP3 Supabase trip reads
 - [ ] CP4 trip creation
 - [ ] CP5 ride requests
@@ -18,5 +22,6 @@ Details live in `AI_HANDOFF.md`. Update both after every checkpoint.
 - [ ] CP7 deployment
 - [ ] CP8 optional polish
 
-Current state: CP1 files written; waiting for the owner to run them in Supabase and approve CP2.
-No application code has been changed (React app still local-only). Demo flow (A lists -> B finds -> B requests -> A sees): NOT working yet.
+Current state: CP2 complete and committed locally (`a7f1fd4`). React pages are unchanged and still local-only, so the demo flow
+(A lists -> B finds -> B requests -> A sees) is NOT working yet. CP3 has NOT started; waiting for the owner's approval.
+Reminder: CP1 stays [~] until the Supabase dashboard steps (AI_HANDOFF.md section 15) are confirmed.

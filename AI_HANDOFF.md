@@ -1,6 +1,6 @@
 # AI_HANDOFF.md
 
-Last updated: after CP1 (Supabase schema + seed SQL written). Update this file after every checkpoint.
+Last updated: after CP2 (Supabase client, identity and API layer in `src/lib/`, `@supabase/supabase-js` installed). Update this file after every checkpoint.
 
 > Work so far was done in a sandbox clone of the public GitHub repo (base commit `2fc1301`,
 > "EmptyTrip Shillong prototype"). The owner keeps the real local repo and copies files across.
@@ -17,8 +17,8 @@ Required demo flow (across two browsers or devices):
 3. Browser B: passenger requests the ride.
 4. Browser A: driver sees the passenger request (needs a new `/driver` page).
 
-**Status: this flow does NOT work yet.** The React app still uses only browser-local data. CP1 only prepared the
-database SQL; nothing in the app talks to Supabase yet.
+**Status: this flow does NOT work yet.** The React pages still use only browser-local data. CP1 prepared the database
+SQL and CP2 added the data layer in `src/lib/`, but no page imports it yet (that starts in CP3).
 
 ## 2. Current architecture
 
@@ -26,10 +26,11 @@ database SQL; nothing in the app talks to Supabase yet.
 - Routes (`src/App.jsx`): `/` Home, `/find` FindRide, `/list` ListTrip. No driver page exists yet.
 - Styling: mostly inline `style` objects plus global classes in `src/index.css` / `src/App.css`.
 - Maps: `react-leaflet` in the FindRide request modal only.
-- No backend, API calls or auth in the app. Persistence is `localStorage` only (see section 3).
+- No auth. The pages still persist to `localStorage` only (see section 3). A Supabase data layer exists in `src/lib/` (CP2) but is not used by any page yet.
 
-Planned architecture (CP2 onward): Supabase (Postgres + `@supabase/supabase-js`) called directly from the frontend
-through a small data layer in `src/lib/`. Existing frontend structure stays.
+Architecture: Supabase (Postgres + `@supabase/supabase-js`) called directly from the frontend through a small data layer
+in `src/lib/` (built in CP2). Pages will use it from CP3 onward and must only call `src/lib/api.js`, never the client
+directly. Existing frontend structure stays.
 
 ## 3. Important files and what they do
 
@@ -49,6 +50,9 @@ through a small data layer in `src/lib/`. Existing frontend structure stays.
 | `supabase/schema.sql` | NEW (CP1). Tables, constraints, indexes, grants, RLS policies. Run first. |
 | `supabase/seed.sql` | NEW (CP1). Inserts the 10 seed trips with ids 1-10. Run second. |
 | `.env.example` | NEW (CP1). Variable names only, no values. |
+| `src/lib/supabase.js` | NEW (CP2). Exports `supabase` (`createClient` with the two `VITE_` variables; auth session persistence off). Throws a clear error at import if either variable is missing. |
+| `src/lib/identity.js` | NEW (CP2). Exports `getDriverKey()` and `getPassengerKey()`: random per-browser ids (`drv_...` / `pax_...`) created on first call and stored in `localStorage` (`emptyTripDriverKey`, `emptyTripPassengerKey`); in-memory fallback if storage is blocked. Not authentication. |
+| `src/lib/api.js` | NEW (CP2). The only module that talks to Supabase. See the API summary below. |
 
 ## 4. Supabase tables/schema created so far
 
@@ -90,6 +94,18 @@ Indexes: `trips_route_idx (from_location, to_location)`, `trips_driver_key_idx (
 
 Indexes: `ride_requests_trip_idx (trip_id)`, `ride_requests_passenger_idx (passenger_key)`.
 
+### API layer summary (`src/lib/api.js`, CP2)
+All functions are async and throw an `Error` on a Supabase error (callers must try/catch).
+- `listTrips()` -> all trips ordered by `id` ascending, each mapped to the frontend shape: `id, driver, phone, from, to, date,
+  departure, seats, vehicle, fare, notes, rating, pickup`, plus `fromCoords`/`toCoords` (from `locationCoords`), `driverKey`, `createdAt`.
+- `createTrip(form)` -> takes the ListTrip form shape (`driver, phone, from, to, date, departure, seats, vehicle, fare, notes`);
+  converts `seats`/`fare` to numbers, empty `date`/`notes` to null, attaches `getDriverKey()`; returns the saved trip (mapped).
+- `createRequest({ tripId, passengerName, passengerPhone, seatsRequested = 1 })` -> attaches `getPassengerKey()`; returns the saved
+  request `{ id, tripId, passengerName, passengerPhone, seatsRequested, status, createdAt }`.
+- `listRequestsForDriver()` -> requests for trips whose `driver_key` equals this browser's driver key, newest first, each with a
+  `trip` field (mapped trip). Uses an embedded `trips!inner(*)` select.
+- NOT yet present: a lookup of requests by passenger key (needed for Home "Your Requests"). Add it in CP5 (`ride_requests.passenger_key`).
+
 ### Privileges and RLS
 - RLS enabled on both tables.
 - `grant select, insert` on both tables to `anon, authenticated` (plus `usage` on schema `public`).
@@ -117,13 +133,15 @@ tables with the 4 expected policies. Not tested: Supabase's own PostgREST/API la
 - `VITE_SUPABASE_ANON_KEY`
 
 `.env.example` (names only, created in CP1) is committed. Real values go only in `.env.local` (git-ignored via
-`*.local`). Never use or commit the service-role key. The variables are not read by any code yet (CP2 adds that).
+`*.local`). Never use or commit the service-role key. `src/lib/supabase.js` (CP2) reads both variables; it throws at import if
+either is missing, so a page that imports the API layer needs `.env.local` (restart `npm run dev` after editing it).
 
 ## 6. Dependencies added
 
-None so far. Planned: `@supabase/supabase-js` (CP2).
+`@supabase/supabase-js` (added in CP2.4 by the owner with `npm install @supabase/supabase-js`; `package.json` and
+`package-lock.json` updated). The exact installed version is recorded in `package.json` / `package-lock.json`.
 
-Current dependencies: leaflet ^1.9.4, lucide-react ^1.47.0, react ^19.2.8, react-dom ^19.2.8,
+Other dependencies: leaflet ^1.9.4, lucide-react ^1.47.0, react ^19.2.8, react-dom ^19.2.8,
 react-leaflet ^5.0.0, react-router-dom ^7.18.4. Dev: eslint ^10, vite ^8.3.0, @vitejs/plugin-react ^6.1.1,
 eslint-plugin-react-hooks, eslint-plugin-react-refresh, globals, @eslint/js, @types/react, @types/react-dom.
 
@@ -132,27 +150,32 @@ eslint-plugin-react-hooks, eslint-plugin-react-refresh, globals, @eslint/js, @ty
 - CP0 baseline: recorded. Build passes; lint fails with 2 pre-existing errors (section 11). No code changed.
 - CP1 Supabase schema: SQL files and `.env.example` written and verified on local PostgreSQL 16. **Still pending:
   the owner running the SQL in the real Supabase dashboard** and confirming (section 15). Not marked fully tested until then.
+- CP2 API/data layer: **complete** (CP2.1 to CP2.4). Created `src/lib/supabase.js`, `src/lib/identity.js`, `src/lib/api.js`;
+  `@supabase/supabase-js` added to `package.json` / `package-lock.json`. Verified locally by the owner: `npm run build`
+  passes; `npm run lint` shows only the same 2 pre-existing errors (no new ones); working tree clean. Committed locally as
+  `a7f1fd4 Add Supabase API layer`. Not verified: the API functions have not been exercised against a real Supabase project
+  as far as this file records (that depends on the section 15 dashboard steps); no pages use the layer yet.
+  Note: the assistant's sandbox could not run `npm install` (registry returned 403), so CP2.4 was done by the owner locally,
+  and the assistant did not create or inspect the final `package.json` / `package-lock.json`.
 
 ## 8. Checkpoint in progress
 
-None. CP2 must not start until the owner approves it (ideally after the dashboard steps in section 15 are done).
+None. CP3 has NOT started and must not start until the owner approves it. CP3 needs a working Supabase project
+(section 15 steps done) and a local `.env.local` to verify.
 
 ## 9. Exact files modified/created
 
-CP1 created (all complete, no placeholders):
-- `supabase/schema.sql`
-- `supabase/seed.sql`
-- `.env.example`
+CP1 created: `supabase/schema.sql`, `supabase/seed.sql`, `.env.example`.
 
-Updated: `AI_HANDOFF.md`, `IMPLEMENTATION_STATUS.md` (created in CP0).
+CP2 created: `src/lib/supabase.js`, `src/lib/identity.js`, `src/lib/api.js`.
+CP2 modified: `package.json`, `package-lock.json` (added `@supabase/supabase-js`, by the owner).
+Updated docs: `AI_HANDOFF.md`, `IMPLEMENTATION_STATUS.md`.
 
-Modified application/config files: **none**. `src/data/trips.js`, all `src/pages/*`, `src/App.jsx`, `package.json`
-and `package-lock.json` are unchanged. The two pre-existing lint errors were deliberately left alone.
+Not modified: `src/data/trips.js`, all `src/pages/*`, `src/App.jsx`. The two pre-existing lint errors were deliberately left alone.
 
 ## 10. What is still unfinished
 
-CP2 to CP8: `@supabase/supabase-js`, `src/lib/supabase.js`, `src/lib/api.js`, `src/lib/identity.js`; shared trip
-reads (CP3) and writes (CP4); ride requests with passenger name/phone fields (CP5); `src/pages/DriverRequests.jsx`
+CP3 to CP8: shared trip reads (CP3) and writes (CP4); ride requests with passenger name/phone fields plus a passenger-key request lookup in `api.js` (CP5); `src/pages/DriverRequests.jsx`
 plus route/nav link (CP6); deployment (CP7); optional accept/decline (CP8).
 
 ## 11. Known bugs / errors
@@ -182,13 +205,11 @@ Re-running `schema.sql` never alters an existing table; column changes need a ma
 
 1. Read `IMPLEMENTATION_STATUS.md` and this file.
 2. Confirm the owner has completed the dashboard steps in section 15 (tables exist, 10 seed trips visible, test
-   request insert worked). If not, ask them to do that first; do not start CP2 without their approval.
-3. CP2 only: run `npm install @supabase/supabase-js`; create `src/lib/supabase.js` (reads the two `VITE_` variables),
-   `src/lib/identity.js` (driver/passenger keys in localStorage), `src/lib/api.js` (`listTrips`, `createTrip`,
-   `createRequest`, `listRequestsForDriver`, mapping `from_location`/`to_location` to `from`/`to` and adding
-   `fromCoords`/`toCoords` from `locationCoords`). Do not touch the pages yet. Test:
-   `(await import('/src/lib/api.js')).listTrips()` in the browser console during `npm run dev`.
-4. Then CP3 to CP8 per `IMPLEMENTATION_STATUS.md`, one at a time, updating both handoff files after each.
+   request insert worked) and has a local `.env.local` with the two `VITE_` values. If not, ask them first.
+3. Do not start CP3 without the owner's approval. CP3: make `FindRide` (and Home's lookup of trips) read trips through
+   `listTrips()` from `src/lib/api.js`; handle loading and error states; do not import `supabase.js` from pages.
+   Quick check of the layer in the browser console during `npm run dev`: `(await import('/src/lib/api.js')).listTrips()`.
+4. Then CP4 to CP8 per `IMPLEMENTATION_STATUS.md`, one at a time, updating both handoff files after each.
 
 ## 13. Commands
 
@@ -221,6 +242,15 @@ Decisions made in CP1 (change them if you disagree):
 - No check that `from_location <> to_location`, and no restriction to the 8 known locations (the UI does not enforce them either).
 - Seed trip 1 keeps the phone number already present in `src/data/trips.js`. If it is a real person's number,
   edit `supabase/seed.sql` before running it (and consider the same for `trips.js`).
+
+Decisions made in CP2 (change them if you disagree):
+- `supabase.js` throws at import if the env variables are missing (fail fast) instead of exporting a null client.
+- Auth options are all off (`persistSession`, `autoRefreshToken`, `detectSessionInUrl` = false) because there is no auth.
+- Identity keys: `drv_` / `pax_` + `crypto.randomUUID()` (fallback random string), separate `localStorage` keys, in-memory fallback.
+- API functions take the driver/passenger key from `identity.js` themselves; pages do not pass keys.
+- API objects use camelCase for new fields (`tripId`, `passengerName`, `driverKey`, `createdAt`, ...) and the original trip field names for trips.
+- `rating` is returned as a number (Postgres numeric arrives as a string) or `undefined` when null.
+- Only the four functions in the CP2 spec were written; a passenger-key request lookup is deferred to CP5.
 
 Still open (ask the owner before they matter): seat rule (do pending requests reduce seats?), duplicate requests
 by the same passenger, whether search should filter by date or hide old trips, whether accept/decline is required
