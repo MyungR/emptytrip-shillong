@@ -56,7 +56,7 @@ directly. Existing frontend structure stays.
 
 ## 4. Supabase tables/schema created so far
 
-**Written as SQL files (CP1) but NOT yet run in any Supabase project.** The owner must run them (section 15).
+**Written as SQL files (CP1) and now run in the real hosted Supabase project by the owner** (`schema.sql`, then `seed.sql`; 10 seeded trips confirmed; see section 15).
 
 ### `public.trips`
 | Column | Type | Null | Default / constraint | Frontend name / note |
@@ -148,8 +148,9 @@ eslint-plugin-react-hooks, eslint-plugin-react-refresh, globals, @eslint/js, @ty
 ## 7. Checkpoints completed
 
 - CP0 baseline: recorded. Build passes; lint fails with 2 pre-existing errors (section 11). No code changed.
-- CP1 Supabase schema: SQL files and `.env.example` written and verified on local PostgreSQL 16. **Still pending:
-  the owner running the SQL in the real Supabase dashboard** and confirming (section 15). Not marked fully tested until then.
+- CP1 Supabase schema: SQL files and `.env.example` written and verified on local PostgreSQL 16, then **verified live on the
+  real hosted Supabase project by the owner** (schema ran, seed ran, 10 rows and 7 columns returned by the seed check, a test
+  INSERT into `public.trips` succeeded). Complete (`[x]`).
 - CP2 API/data layer: **complete** (CP2.1 to CP2.4). Created `src/lib/supabase.js`, `src/lib/identity.js`, `src/lib/api.js`;
   `@supabase/supabase-js` added to `package.json` / `package-lock.json`. Verified locally by the owner: `npm run build`
   passes; `npm run lint` shows only the same 2 pre-existing errors (no new ones); working tree clean. Committed locally as
@@ -161,7 +162,7 @@ eslint-plugin-react-hooks, eslint-plugin-react-refresh, globals, @eslint/js, @ty
 ## 8. Checkpoint in progress
 
 None. CP3 has NOT started and must not start until the owner approves it. CP3 needs a working Supabase project
-(section 15 steps done) and a local `.env.local` to verify.
+(done for the database, see section 15) and a local `.env.local` to verify.
 
 ## 9. Exact files modified/created
 
@@ -204,8 +205,8 @@ Re-running `schema.sql` never alters an existing table; column changes need a ma
 ## 12. Exact next steps (for another developer/AI)
 
 1. Read `IMPLEMENTATION_STATUS.md` and this file.
-2. Confirm the owner has completed the dashboard steps in section 15 (tables exist, 10 seed trips visible, test
-   request insert worked) and has a local `.env.local` with the two `VITE_` values. If not, ask them first.
+2. The database steps in section 15 are confirmed done. Confirm the owner has a local `.env.local` with the two `VITE_` values
+   (step 7). If not, ask them first.
 3. Do not start CP3 without the owner's approval. CP3: make `FindRide` (and Home's lookup of trips) read trips through
    `listTrips()` from `src/lib/api.js`; handle loading and error states; do not import `supabase.js` from pages.
    Quick check of the layer in the browser console during `npm run dev`: `(await import('/src/lib/api.js')).listTrips()`.
@@ -258,9 +259,13 @@ for the demo, hosting target.
 
 ## 15. Supabase dashboard steps
 
-Completed manually by the owner: **none confirmed yet.** (The assistant has no access to any Supabase project.)
+Completed manually by the owner and confirmed: a Supabase project exists; `supabase/schema.sql` ran successfully; `supabase/seed.sql`
+ran successfully; the seed verification query returned 10 rows and 7 columns (10 seeded trips); a test INSERT into `public.trips`
+succeeded. The test insert was done only in the SQL Editor and must NOT be added to `seed.sql`; that test row may still exist in the
+live `trips` table (delete it in the SQL Editor if unwanted). Not recorded as confirmed: the RLS/policy checks (step 5), the
+`ride_requests` test (step 6) and the `.env.local` values (step 7). (The assistant has no access to any Supabase project.)
 
-Required now (owner):
+Steps, for reference and for setting up another project (steps 1-4 are done for the current one):
 1. Create a Supabase project (supabase.com -> New project). Save the database password somewhere private.
 2. SQL Editor -> New query -> paste all of `supabase/schema.sql` -> Run. Expect "Success. No rows returned".
 3. New query -> paste all of `supabase/seed.sql` -> Run. Expect a result row from `setval` (value 10).
