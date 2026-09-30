@@ -1,7 +1,6 @@
-
-
 import { useState } from "react";
-import { trips, locations, locationCoords } from "../data/trips";
+import { locations, locationCoords } from "../data/trips";
+import { listTrips } from "../lib/api";
 import { MapContainer, TileLayer, Marker, Popup, Polyline } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 
@@ -38,18 +37,29 @@ function FindRide() {
   const [searched, setSearched] = useState(false);
   const [requested, setRequested] = useState([]);
   const [modalTrip, setModalTrip] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
-  function handleSearch() {
-    const saved = JSON.parse(localStorage.getItem("emptyTripListings") || "[]");
-    const allTrips = [...trips, ...saved];
+  async function handleSearch() {
+    setLoading(true);
+    setError("");
+    try {
+      const allTrips = await listTrips();
 
-    let filtered = allTrips.filter((t) => t.from === from && t.to === to);
-    if (maxFare) filtered = filtered.filter((t) => t.fare && t.fare <= Number(maxFare));
-    if (minSeats) filtered = filtered.filter((t) => t.seats && t.seats >= Number(minSeats));
-    if (minRating) filtered = filtered.filter((t) => t.rating && t.rating >= Number(minRating));
+      let filtered = allTrips.filter((t) => t.from === from && t.to === to);
+      if (maxFare) filtered = filtered.filter((t) => t.fare && t.fare <= Number(maxFare));
+      if (minSeats) filtered = filtered.filter((t) => t.seats && t.seats >= Number(minSeats));
+      if (minRating) filtered = filtered.filter((t) => t.rating && t.rating >= Number(minRating));
 
-    setResults(filtered);
-    setSearched(true);
+      setResults(filtered);
+      setSearched(true);
+    } catch (err) {
+      setResults([]);
+      setSearched(false);
+      setError(err.message || "Could not load trips. Please try again.");
+    } finally {
+      setLoading(false);
+    }
   }
 
   function confirmRequest() {
@@ -104,10 +114,20 @@ function FindRide() {
             <input className="field-input" type="number" step="0.1" value={minRating} onChange={(e) => setMinRating(e.target.value)} placeholder="Any" />
           </div>
         </div>
-        <button className="btn btn-primary" onClick={handleSearch} style={{ marginTop: "22px" }}>
-          Search Trips
+        <button className="btn btn-primary" onClick={handleSearch} disabled={loading} style={{ marginTop: "22px" }}>
+          {loading ? "Searching..." : "Search Trips"}
         </button>
       </div>
+
+      {/* ERROR */}
+      {error && (
+        <div role="alert" style={{
+          marginBottom: "32px", padding: "14px 16px", borderRadius: "8px",
+          background: "#fef2f2", border: "1px solid #fecaca", color: "#991b1b", fontSize: "14px",
+        }}>
+          Could not load trips: {error}
+        </div>
+      )}
 
       {/* EMPTY */}
       {searched && results.length === 0 && (
