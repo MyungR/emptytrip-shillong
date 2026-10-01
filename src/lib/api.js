@@ -53,6 +53,20 @@ export async function listTrips() {
   return rows.map(toTrip)
 }
 
+// Trips listed from this browser (matching its driver key), newest first.
+// Same trip shape as listTrips(). Used for "Your Listed Trips".
+export async function listMyTrips() {
+  const rows = unwrap(
+    await supabase
+      .from('trips')
+      .select('*')
+      .eq('driver_key', getDriverKey())
+      .order('created_at', { ascending: false })
+      .order('id', { ascending: false })
+  )
+  return rows.map(toTrip)
+}
+
 // Insert a trip from the ListTrip form shape:
 // { driver, phone, from, to, date, departure, seats, vehicle, fare, notes }
 // The browser's driver key is attached automatically. Returns the saved trip.
