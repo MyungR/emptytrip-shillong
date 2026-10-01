@@ -1,6 +1,6 @@
 # AI_HANDOFF.md
 
-Last updated: after CP2 (Supabase client, identity and API layer in `src/lib/`, `@supabase/supabase-js` installed). Update this file after every checkpoint.
+Last updated: after CP3 (`/find` reads trips from Supabase via `listTrips()`). Update this file after every checkpoint.
 
 > Work so far was done in a sandbox clone of the public GitHub repo (base commit `2fc1301`,
 > "EmptyTrip Shillong prototype"). The owner keeps the real local repo and copies files across.
@@ -17,8 +17,9 @@ Required demo flow (across two browsers or devices):
 3. Browser B: passenger requests the ride.
 4. Browser A: driver sees the passenger request (needs a new `/driver` page).
 
-**Status: this flow does NOT work yet.** The React pages still use only browser-local data. CP1 prepared the database
-SQL and CP2 added the data layer in `src/lib/`, but no page imports it yet (that starts in CP3).
+**Status: this flow does NOT work yet.** Step 2 can read shared data: after CP3, `/find` searches the trips stored in Supabase
+(seed trips 1-10). But `/list` still saves to browser `localStorage`, so a trip listed in Browser A is not visible in Browser B
+(needs CP4); requests are still local (CP5); there is no driver page (CP6).
 
 ## 2. Current architecture
 
@@ -26,10 +27,10 @@ SQL and CP2 added the data layer in `src/lib/`, but no page imports it yet (that
 - Routes (`src/App.jsx`): `/` Home, `/find` FindRide, `/list` ListTrip. No driver page exists yet.
 - Styling: mostly inline `style` objects plus global classes in `src/index.css` / `src/App.css`.
 - Maps: `react-leaflet` in the FindRide request modal only.
-- No auth. The pages still persist to `localStorage` only (see section 3). A Supabase data layer exists in `src/lib/` (CP2) but is not used by any page yet.
+- No auth. `/find` reads trips from Supabase through `src/lib/api.js` (CP3). `/list` (trip creation), Home ("Your Requests") and request writing still use `localStorage` only (see section 3).
 
 Architecture: Supabase (Postgres + `@supabase/supabase-js`) called directly from the frontend through a small data layer
-in `src/lib/` (built in CP2). Pages will use it from CP3 onward and must only call `src/lib/api.js`, never the client
+in `src/lib/` (built in CP2). `FindRide` uses it since CP3; the other pages will follow in CP4+. Pages must only call `src/lib/api.js`, never the client
 directly. Existing frontend structure stays.
 
 ## 3. Important files and what they do
@@ -41,7 +42,7 @@ directly. Existing frontend structure stays.
 | `src/App.jsx` | Router, inline `Navbar` and `Footer`, three routes. |
 | `src/pages/Home.jsx` (302 lines) | Landing page. "Your Requests" reads `localStorage["emptyTripRequests"]` ids and looks them up in seed + listed trips. Always shows a static "Pending confirmation" badge. |
 | `src/pages/ListTrip.jsx` (189 lines) | Driver form. On submit saves `{...form, id: Date.now()}` to `localStorage["emptyTripListings"]`. Shows "Your Listed Trips". |
-| `src/pages/FindRide.jsx` (351 lines) | Route search (from/to, max fare, min seats, min rating), results, request modal with Leaflet map. `confirmRequest` saves the trip id to `localStorage["emptyTripRequests"]`. |
+| `src/pages/FindRide.jsx` (about 373 lines after CP3) | Route search (from/to, max fare, min seats, min rating), results, request modal with Leaflet map. CP3: `handleSearch()` is async and reads all trips with `listTrips()` (Supabase), then filters client-side; has `loading` and `error` state. `confirmRequest` still saves the trip id to `localStorage["emptyTripRequests"]` (CP5). |
 | `src/data/trips.js` (173 lines) | Exports `locations` (8 names), `locationCoords` (name -> [lat,lng]), `trips` (10 seed trips, ids 1-10, all to Shillong). UNCHANGED; stays as reference data. |
 | `src/index.css`, `src/App.css` | Global styles (classes: `page`, `section`, `card`, `btn`, `btn-primary`, `field-input`, `ride-card` ...). |
 | `src/assets/*`, `public/*` | `hero.jpg` is used by Home; `react.svg`, `vite.svg`, `hero.png`, `icons.svg` are Vite template leftovers. |
@@ -154,15 +155,20 @@ eslint-plugin-react-hooks, eslint-plugin-react-refresh, globals, @eslint/js, @ty
 - CP2 API/data layer: **complete** (CP2.1 to CP2.4). Created `src/lib/supabase.js`, `src/lib/identity.js`, `src/lib/api.js`;
   `@supabase/supabase-js` added to `package.json` / `package-lock.json`. Verified locally by the owner: `npm run build`
   passes; `npm run lint` shows only the same 2 pre-existing errors (no new ones); working tree clean. Committed locally as
-  `a7f1fd4 Add Supabase API layer`. Not verified: the API functions have not been exercised against a real Supabase project
-  as far as this file records (that depends on the section 15 dashboard steps); no pages use the layer yet.
+  `a7f1fd4 Add Supabase API layer`. At CP2 time nothing used the layer yet; `listTrips()` was later confirmed live in CP3 (the
+  other API functions are still unexercised).
   Note: the assistant's sandbox could not run `npm install` (registry returned 403), so CP2.4 was done by the owner locally,
   and the assistant did not create or inspect the final `package.json` / `package-lock.json`.
+- CP3 Supabase trip reads: **complete.** `src/pages/FindRide.jsx` imports `listTrips` from `src/lib/api.js`; `handleSearch()` is async
+  and no longer reads `emptyTripListings` or the static `trips` array. Filters (from/to, max fare, min seats, min rating) preserved.
+  Added `loading` (button disabled, "Searching...") and `error` (inline alert) handling. Verified by the owner: live `/find` search
+  works against the hosted Supabase database; `npm run build` passes; `npm run lint` shows exactly the 2 known errors
+  (`Home.jsx:13`, `ListTrip.jsx:22`). Committed as `eaa0746 Read trips from Supabase on Find Ride`; working tree clean.
+  `listTrips()` is now confirmed live; `createTrip`, `createRequest`, `listRequestsForDriver` are not yet.
 
 ## 8. Checkpoint in progress
 
-None. CP3 has NOT started and must not start until the owner approves it. CP3 needs a working Supabase project
-(done for the database, see section 15) and a local `.env.local` to verify.
+None. CP4 has NOT started and must not start until the owner approves it.
 
 ## 9. Exact files modified/created
 
@@ -170,13 +176,14 @@ CP1 created: `supabase/schema.sql`, `supabase/seed.sql`, `.env.example`.
 
 CP2 created: `src/lib/supabase.js`, `src/lib/identity.js`, `src/lib/api.js`.
 CP2 modified: `package.json`, `package-lock.json` (added `@supabase/supabase-js`, by the owner).
+CP3 modified: `src/pages/FindRide.jsx` only (commit `eaa0746`).
 Updated docs: `AI_HANDOFF.md`, `IMPLEMENTATION_STATUS.md`.
 
-Not modified: `src/data/trips.js`, all `src/pages/*`, `src/App.jsx`. The two pre-existing lint errors were deliberately left alone.
+Not modified: `src/data/trips.js`, `src/pages/Home.jsx`, `src/pages/ListTrip.jsx`, `src/App.jsx`, `src/lib/*`. The two pre-existing lint errors were deliberately left alone.
 
 ## 10. What is still unfinished
 
-CP3 to CP8: shared trip reads (CP3) and writes (CP4); ride requests with passenger name/phone fields plus a passenger-key request lookup in `api.js` (CP5); `src/pages/DriverRequests.jsx`
+CP4 to CP8: trip creation in Supabase from `/list` (CP4; `ListTrip` still writes `localStorage["emptyTripListings"]`, and Home still reads local listings); ride requests with passenger name/phone fields plus a passenger-key request lookup in `api.js` (CP5); `src/pages/DriverRequests.jsx`
 plus route/nav link (CP6); deployment (CP7); optional accept/decline (CP8).
 
 ## 11. Known bugs / errors
@@ -184,7 +191,7 @@ plus route/nav link (CP6); deployment (CP7); optional accept/decline (CP8).
 **Baseline lint failure (pre-existing, 2 errors, rule `react-hooks/set-state-in-effect`):**
 - `src/pages/Home.jsx:13` calls `setMyRequests(...)` synchronously inside `useEffect`.
 - `src/pages/ListTrip.jsx:22` calls `setListed(...)` synchronously inside `useEffect`.
-The owner decided: leave them; the CP3/CP4 rewrites remove that code. Do not fix separately.
+The owner decided: leave them. CP3 only changed `FindRide.jsx`, so both errors remain (confirmed after CP3). They are expected to go away when ListTrip (CP4) and Home (CP5) are rewritten. Do not fix separately.
 
 **Baseline build:** passes (`vite build`, 70 modules).
 
@@ -207,10 +214,11 @@ Re-running `schema.sql` never alters an existing table; column changes need a ma
 1. Read `IMPLEMENTATION_STATUS.md` and this file.
 2. The database steps in section 15 are confirmed done. Confirm the owner has a local `.env.local` with the two `VITE_` values
    (step 7). If not, ask them first.
-3. Do not start CP3 without the owner's approval. CP3: make `FindRide` (and Home's lookup of trips) read trips through
-   `listTrips()` from `src/lib/api.js`; handle loading and error states; do not import `supabase.js` from pages.
-   Quick check of the layer in the browser console during `npm run dev`: `(await import('/src/lib/api.js')).listTrips()`.
-4. Then CP4 to CP8 per `IMPLEMENTATION_STATUS.md`, one at a time, updating both handoff files after each.
+3. CP3 is done. Do not start CP4 without the owner's approval. CP4: make `ListTrip` create trips with `createTrip(form)` from
+   `src/lib/api.js` and load "Your Listed Trips" from Supabase (e.g. filter `listTrips()` by `driverKey === getDriverKey()`), replacing
+   the `emptyTripListings` `localStorage` read/write; handle loading and error states; do not import `supabase.js` from pages.
+   Note Home still reads `emptyTripListings`; decide with the owner how to handle that (Home's request lookup belongs to CP5).
+4. Then CP5 to CP8 per `IMPLEMENTATION_STATUS.md`, one at a time, updating both handoff files after each.
 
 ## 13. Commands
 
@@ -228,7 +236,7 @@ then run `supabase/schema.sql` and `supabase/seed.sql` with `psql -f`.
 ## 14. Important decisions and assumptions
 
 Decided by the owner: Supabase as the shared backend; keep React + Vite + JSX; follow CP0-CP8 one at a time and wait
-for approval; do not invent extra features; leave the 2 lint errors for CP3/CP4; keep `src/data/trips.js` unchanged.
+for approval; do not invent extra features; leave the 2 lint errors (deferred to the CP4/CP5 rewrites); keep `src/data/trips.js` unchanged.
 
 Decisions made in CP1 (change them if you disagree):
 - Column rename `from`/`to` -> `from_location`/`to_location` (reserved words); mapped back in the API layer.
@@ -252,6 +260,11 @@ Decisions made in CP2 (change them if you disagree):
 - API objects use camelCase for new fields (`tripId`, `passengerName`, `driverKey`, `createdAt`, ...) and the original trip field names for trips.
 - `rating` is returned as a number (Postgres numeric arrives as a string) or `undefined` when null.
 - Only the four functions in the CP2 spec were written; a passenger-key request lookup is deferred to CP5.
+
+Decisions made in CP3 (change them if you disagree):
+- Only `FindRide.jsx` was changed. Home and ListTrip were left alone, so their `localStorage` trip reads remain until CP4/CP5.
+- `/find` still searches on button click (not on page load), and filters client-side after fetching all trips with `listTrips()`.
+- On a failed search the error is shown and `searched` is set to false, so an error is never displayed as "No return trips found".
 
 Still open (ask the owner before they matter): seat rule (do pending requests reduce seats?), duplicate requests
 by the same passenger, whether search should filter by date or hide old trips, whether accept/decline is required
