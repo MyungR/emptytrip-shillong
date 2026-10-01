@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { locations } from "../data/trips";
+import { createTrip, listMyTrips } from "../lib/api";
 
 function ListTrip() {
   const [form, setForm] = useState({
@@ -16,35 +17,55 @@ function ListTrip() {
   });
   const [listed, setListed] = useState([]);
   const [submitted, setSubmitted] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [loadError, setLoadError] = useState("");
 
   useEffect(() => {
-    const saved = localStorage.getItem("emptyTripListings");
-    if (saved) setListed(JSON.parse(saved));
+    let cancelled = false;
+    listMyTrips()
+      .then((trips) => {
+        if (!cancelled) setListed(trips);
+      })
+      .catch((err) => {
+        if (!cancelled) setLoadError(err.message || "Could not load your listed trips.");
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   function handleChange(e) {
     setForm({ ...form, [e.target.name]: e.target.value });
   }
 
-  function handleSubmit(e) {
+  async function handleSubmit(e) {
     e.preventDefault();
-    const newTrip = { ...form, id: Date.now() };
-    const updated = [newTrip, ...listed];
-    setListed(updated);
-    localStorage.setItem("emptyTripListings", JSON.stringify(updated));
-    setSubmitted(true);
-    setForm({
-      driver: "",
-      phone: "",
-      from: "Sohra",
-      to: "Shillong",
-      date: "",
-      departure: "",
-      seats: "",
-      vehicle: "",
-      fare: "",
-      notes: "",
-    });
+    if (saving) return;
+    setSaving(true);
+    setError("");
+    setSubmitted(false);
+    try {
+      const created = await createTrip(form);
+      setListed((prev) => [created, ...prev]);
+      setSubmitted(true);
+      setForm({
+        driver: "",
+        phone: "",
+        from: "Sohra",
+        to: "Shillong",
+        date: "",
+        departure: "",
+        seats: "",
+        vehicle: "",
+        fare: "",
+        notes: "",
+      });
+    } catch (err) {
+      setError(err.message || "Could not list your trip. Please try again.");
+    } finally {
+      setSaving(false);
+    }
   }
 
   const inputStyle = {
@@ -81,6 +102,20 @@ function ListTrip() {
           fontSize: "14px",
         }}>
           ✅ Your return trip has been listed.
+        </div>
+      )}
+
+      {error && (
+        <div role="alert" style={{
+          background: "#fef2f2",
+          border: "1px solid #fecaca",
+          color: "#991b1b",
+          padding: "14px 18px",
+          borderRadius: "8px",
+          marginBottom: "24px",
+          fontSize: "14px",
+        }}>
+          Could not list your trip: {error}
         </div>
       )}
 
@@ -139,7 +174,7 @@ function ListTrip() {
             placeholder="e.g. Leaving Sohra around 5 PM, pickup near the market."
             style={{ ...inputStyle, resize: "vertical" }} />
         </div>
-        <button type="submit"
+        <button type="submit" disabled={saving}
           style={{
             marginTop: "20px",
             background: "#16a34a",
@@ -149,11 +184,26 @@ function ListTrip() {
             borderRadius: "8px",
             fontSize: "15px",
             fontWeight: "600",
-            cursor: "pointer",
+            cursor: saving ? "not-allowed" : "pointer",
+            opacity: saving ? 0.7 : 1,
           }}>
-          List Return Trip
+          {saving ? "Listing..." : "List Return Trip"}
         </button>
       </form>
+
+      {loadError && (
+        <div role="alert" style={{
+          background: "#fef2f2",
+          border: "1px solid #fecaca",
+          color: "#991b1b",
+          padding: "14px 18px",
+          borderRadius: "8px",
+          marginBottom: "24px",
+          fontSize: "14px",
+        }}>
+          Could not load your listed trips: {loadError}
+        </div>
+      )}
 
       {listed.length > 0 && (
         <div>
