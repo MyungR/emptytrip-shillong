@@ -1,6 +1,6 @@
 # AI_HANDOFF.md
 
-Last updated: after CP3 (`/find` reads trips from Supabase via `listTrips()`). Update this file after every checkpoint.
+Last updated: after CP4 (`/list` creates and lists trips in Supabase via `createTrip()` / `listMyTrips()`). Update this file after every checkpoint.
 
 > Work so far was done in a sandbox clone of the public GitHub repo (base commit `2fc1301`,
 > "EmptyTrip Shillong prototype"). The owner keeps the real local repo and copies files across.
@@ -17,9 +17,9 @@ Required demo flow (across two browsers or devices):
 3. Browser B: passenger requests the ride.
 4. Browser A: driver sees the passenger request (needs a new `/driver` page).
 
-**Status: this flow does NOT work yet.** Step 2 can read shared data: after CP3, `/find` searches the trips stored in Supabase
-(seed trips 1-10). But `/list` still saves to browser `localStorage`, so a trip listed in Browser A is not visible in Browser B
-(needs CP4); requests are still local (CP5); there is no driver page (CP6).
+**Status: this flow does NOT fully work yet.** Steps 1-2 now work through Supabase: after CP3 `/find` searches the trips stored in
+Supabase, and after CP4 `/list` saves trips to Supabase, so a listed trip is shared between browsers/devices (tested locally by the owner,
+including a phone reaching the local Vite server over the LAN; not deployed). Requests are still local (CP5); there is no driver page (CP6).
 
 ## 2. Current architecture
 
@@ -27,10 +27,10 @@ Required demo flow (across two browsers or devices):
 - Routes (`src/App.jsx`): `/` Home, `/find` FindRide, `/list` ListTrip. No driver page exists yet.
 - Styling: mostly inline `style` objects plus global classes in `src/index.css` / `src/App.css`.
 - Maps: `react-leaflet` in the FindRide request modal only.
-- No auth. `/find` reads trips from Supabase through `src/lib/api.js` (CP3). `/list` (trip creation), Home ("Your Requests") and request writing still use `localStorage` only (see section 3).
+- No auth. `/find` reads trips from Supabase through `src/lib/api.js` (CP3). `/list` creates trips and loads "Your Listed Trips" through `src/lib/api.js` (CP4). Home ("Your Requests") and request writing still use `localStorage` only (see section 3).
 
 Architecture: Supabase (Postgres + `@supabase/supabase-js`) called directly from the frontend through a small data layer
-in `src/lib/` (built in CP2). `FindRide` uses it since CP3; the other pages will follow in CP4+. Pages must only call `src/lib/api.js`, never the client
+in `src/lib/` (built in CP2). `FindRide` uses it since CP3 and `ListTrip` since CP4; the remaining pages will follow in CP5+. Pages must only call `src/lib/api.js`, never the client
 directly. Existing frontend structure stays.
 
 ## 3. Important files and what they do
@@ -40,8 +40,8 @@ directly. Existing frontend structure stays.
 | `index.html` | Entry HTML. Loads Inter font and Leaflet CSS from CDNs. Mounts `/src/main.jsx`. |
 | `src/main.jsx` | React root, `StrictMode`, imports `index.css`. |
 | `src/App.jsx` | Router, inline `Navbar` and `Footer`, three routes. |
-| `src/pages/Home.jsx` (302 lines) | Landing page. "Your Requests" reads `localStorage["emptyTripRequests"]` ids and looks them up in seed + listed trips. Always shows a static "Pending confirmation" badge. |
-| `src/pages/ListTrip.jsx` (189 lines) | Driver form. On submit saves `{...form, id: Date.now()}` to `localStorage["emptyTripListings"]`. Shows "Your Listed Trips". |
+| `src/pages/Home.jsx` (302 lines, unchanged) | Landing page. "Your Requests" reads `localStorage["emptyTripRequests"]` ids and looks them up in the static seed trips plus `localStorage["emptyTripListings"]`. Always shows a static "Pending confirmation" badge. Since CP4 nothing writes `emptyTripListings` any more, so only the static seed trips (ids 1-10) can be resolved here (see section 11). |
+| `src/pages/ListTrip.jsx` (CP4-B) | Driver form. Imports `createTrip` and `listMyTrips` from `src/lib/api.js`. On submit it calls `await createTrip(form)` (Supabase insert); "Your Listed Trips" loads from `listMyTrips()` (this browser's driver key). Has loading/saving/error states: the submit button is disabled and shows "Listing..." while saving, and the form is cleared only after a successful insert. No longer uses `localStorage["emptyTripListings"]`. Existing UI/styling preserved. |
 | `src/pages/FindRide.jsx` (about 373 lines after CP3) | Route search (from/to, max fare, min seats, min rating), results, request modal with Leaflet map. CP3: `handleSearch()` is async and reads all trips with `listTrips()` (Supabase), then filters client-side; has `loading` and `error` state. `confirmRequest` still saves the trip id to `localStorage["emptyTripRequests"]` (CP5). |
 | `src/data/trips.js` (173 lines) | Exports `locations` (8 names), `locationCoords` (name -> [lat,lng]), `trips` (10 seed trips, ids 1-10, all to Shillong). UNCHANGED; stays as reference data. |
 | `src/index.css`, `src/App.css` | Global styles (classes: `page`, `section`, `card`, `btn`, `btn-primary`, `field-input`, `ride-card` ...). |
@@ -95,10 +95,12 @@ Indexes: `trips_route_idx (from_location, to_location)`, `trips_driver_key_idx (
 
 Indexes: `ride_requests_trip_idx (trip_id)`, `ride_requests_passenger_idx (passenger_key)`.
 
-### API layer summary (`src/lib/api.js`, CP2)
+### API layer summary (`src/lib/api.js`, CP2; `listMyTrips()` added in CP4-A)
 All functions are async and throw an `Error` on a Supabase error (callers must try/catch).
 - `listTrips()` -> all trips ordered by `id` ascending, each mapped to the frontend shape: `id, driver, phone, from, to, date,
   departure, seats, vehicle, fare, notes, rating, pickup`, plus `fromCoords`/`toCoords` (from `locationCoords`), `driverKey`, `createdAt`.
+- `listMyTrips()` (CP4-A) -> the trips whose `driver_key` equals this browser's driver key (`getDriverKey()`), newest first, mapped to the
+  same frontend trip shape as `listTrips()`. Used by `ListTrip` for "Your Listed Trips".
 - `createTrip(form)` -> takes the ListTrip form shape (`driver, phone, from, to, date, departure, seats, vehicle, fare, notes`);
   converts `seats`/`fare` to numbers, empty `date`/`notes` to null, attaches `getDriverKey()`; returns the saved trip (mapped).
 - `createRequest({ tripId, passengerName, passengerPhone, seatsRequested = 1 })` -> attaches `getPassengerKey()`; returns the saved
@@ -148,15 +150,16 @@ eslint-plugin-react-hooks, eslint-plugin-react-refresh, globals, @eslint/js, @ty
 
 ## 7. Checkpoints completed
 
-- CP0 baseline: recorded. Build passes; lint fails with 2 pre-existing errors (section 11). No code changed.
+- CP0 baseline: recorded. Build passed at baseline; lint had 2 pre-existing errors (section 11). No code changed. As reported by the owner after CP4,
+  exactly 1 remains (`src/pages/Home.jsx:13`); the `ListTrip.jsx:22` error was removed by the CP4-B rewrite. Stays `[~]` because of the Home error.
 - CP1 Supabase schema: SQL files and `.env.example` written and verified on local PostgreSQL 16, then **verified live on the
   real hosted Supabase project by the owner** (schema ran, seed ran, 10 rows and 7 columns returned by the seed check, a test
   INSERT into `public.trips` succeeded). Complete (`[x]`).
 - CP2 API/data layer: **complete** (CP2.1 to CP2.4). Created `src/lib/supabase.js`, `src/lib/identity.js`, `src/lib/api.js`;
   `@supabase/supabase-js` added to `package.json` / `package-lock.json`. Verified locally by the owner: `npm run build`
   passes; `npm run lint` shows only the same 2 pre-existing errors (no new ones); working tree clean. Committed locally as
-  `a7f1fd4 Add Supabase API layer`. At CP2 time nothing used the layer yet; `listTrips()` was later confirmed live in CP3 (the
-  other API functions are still unexercised).
+  `a7f1fd4 Add Supabase API layer`. At CP2 time nothing used the layer yet; `listTrips()` was later confirmed live in CP3, and `createTrip()` / `listMyTrips()`
+  in CP4 (`createRequest` and `listRequestsForDriver` are still unexercised).
   Note: the assistant's sandbox could not run `npm install` (registry returned 403), so CP2.4 was done by the owner locally,
   and the assistant did not create or inspect the final `package.json` / `package-lock.json`.
 - CP3 Supabase trip reads: **complete.** `src/pages/FindRide.jsx` imports `listTrips` from `src/lib/api.js`; `handleSearch()` is async
@@ -164,11 +167,22 @@ eslint-plugin-react-hooks, eslint-plugin-react-refresh, globals, @eslint/js, @ty
   Added `loading` (button disabled, "Searching...") and `error` (inline alert) handling. Verified by the owner: live `/find` search
   works against the hosted Supabase database; `npm run build` passes; `npm run lint` shows exactly the 2 known errors
   (`Home.jsx:13`, `ListTrip.jsx:22`). Committed as `eaa0746 Read trips from Supabase on Find Ride`; working tree clean.
-  `listTrips()` is now confirmed live; `createTrip`, `createRequest`, `listRequestsForDriver` are not yet.
+  `listTrips()` was confirmed live in CP3.
+- CP4 Supabase trip creation: **complete** (CP4-A and CP4-B).
+  - CP4-A: added `listMyTrips()` to `src/lib/api.js`. Committed as `bf9befb Add driver trip listing API`.
+  - CP4-B: migrated `src/pages/ListTrip.jsx` from `localStorage` to Supabase using `createTrip()` and `listMyTrips()`; removed the old
+    `emptyTripListings` flow from that file; preserved the existing UI/styling; added loading/saving/error states (button disabled and
+    "Listing..." while saving; form cleared only after a successful insert). Committed as `7673e15 Migrate trip listing to Supabase`.
+  - Functional testing by the owner (local Vite server; phone over the LAN): (1) created a new trip successfully; (2) it appeared under
+    "Your Listed Trips"; (3) it remained after a full page refresh; (4) it appeared in Find Ride; (5) the same trip was visible from a separate
+    phone/browser reaching the local Vite server over the LAN, confirming the data is shared through Supabase and not browser `localStorage`.
+  - Working tree clean after `7673e15`. The local branch is 8 commits ahead of `origin/main`; nothing has been pushed. CP4 was tested locally/over
+    the LAN only; it has not been deployed publicly.
+  - `createTrip()` and `listMyTrips()` are now confirmed live. `createRequest()` and `listRequestsForDriver()` are not yet.
 
 ## 8. Checkpoint in progress
 
-None. CP4 has NOT started and must not start until the owner approves it.
+None. CP5 has NOT started and must not start until the owner approves it.
 
 ## 9. Exact files modified/created
 
@@ -177,23 +191,26 @@ CP1 created: `supabase/schema.sql`, `supabase/seed.sql`, `.env.example`.
 CP2 created: `src/lib/supabase.js`, `src/lib/identity.js`, `src/lib/api.js`.
 CP2 modified: `package.json`, `package-lock.json` (added `@supabase/supabase-js`, by the owner).
 CP3 modified: `src/pages/FindRide.jsx` only (commit `eaa0746`).
+CP4-A modified: `src/lib/api.js` only (added `listMyTrips()`; commit `bf9befb`).
+CP4-B modified: `src/pages/ListTrip.jsx` only (commit `7673e15`).
 Updated docs: `AI_HANDOFF.md`, `IMPLEMENTATION_STATUS.md`.
 
-Not modified: `src/data/trips.js`, `src/pages/Home.jsx`, `src/pages/ListTrip.jsx`, `src/App.jsx`, `src/lib/*`. The two pre-existing lint errors were deliberately left alone.
+Not modified (as of CP4): `src/data/trips.js`, `src/pages/Home.jsx`, `src/App.jsx`, `src/lib/supabase.js`, `src/lib/identity.js`, `supabase/*.sql`, `.env.example`.
+The one remaining pre-existing lint error (`Home.jsx:13`) was deliberately left alone.
 
 ## 10. What is still unfinished
 
-CP4 to CP8: trip creation in Supabase from `/list` (CP4; `ListTrip` still writes `localStorage["emptyTripListings"]`, and Home still reads local listings); ride requests with passenger name/phone fields plus a passenger-key request lookup in `api.js` (CP5); `src/pages/DriverRequests.jsx`
+CP5 to CP8: ride requests (CP5: migrate the Find Ride request flow from `localStorage` to Supabase using `createRequest()`; `confirmRequest` still saves ids to `localStorage["emptyTripRequests"]`, and Home still reads `emptyTripRequests` and `emptyTripListings`; the schema requires passenger name/phone, and a passenger-key request lookup in `api.js` is still missing); `src/pages/DriverRequests.jsx`
 plus route/nav link (CP6); deployment (CP7); optional accept/decline (CP8).
 
 ## 11. Known bugs / errors
 
-**Baseline lint failure (pre-existing, 2 errors, rule `react-hooks/set-state-in-effect`):**
-- `src/pages/Home.jsx:13` calls `setMyRequests(...)` synchronously inside `useEffect`.
-- `src/pages/ListTrip.jsx:22` calls `setListed(...)` synchronously inside `useEffect`.
-The owner decided: leave them. CP3 only changed `FindRide.jsx`, so both errors remain (confirmed after CP3). They are expected to go away when ListTrip (CP4) and Home (CP5) are rewritten. Do not fix separately.
+**Remaining pre-existing lint error (1, rule `react-hooks/set-state-in-effect`), as reported by the owner after CP4:**
+- `src/pages/Home.jsx:13` calls `setMyRequests(requestedTrips)` synchronously inside `useEffect`.
+Resolved: `src/pages/ListTrip.jsx:22` (`setListed(...)` in `useEffect`) was removed by the CP4-B rewrite.
+The owner decided: leave the Home error. It is expected to go away when Home is rewritten in CP5. Do not fix separately.
 
-**Baseline build:** passes (`vite build`, 70 modules).
+**Baseline build:** passes (`vite build`, 70 modules). It was reported passing through CP3; a post-CP4 build result was not part of the information used to update this file.
 
 **Existing behaviour issues (not fixed):**
 - `FindRide` starts `requested` as `[]`, so a refresh loses "Request Sent" and the next request overwrites the saved array.
@@ -202,7 +219,9 @@ The owner decided: leave them. CP3 only changed `FindRide.jsx`, so both errors r
 - "Notify Me" button does nothing.
 - Home shows a hardcoded "Pending confirmation" badge.
 - Modal renders the destination `Marker` twice.
-- Listed trips have `seats`/`fare` as strings, no `rating`/`pickup`/coords, and use 24-hour `departure`. A Min Rating filter always excludes listed trips.
+- Trips listed through `/list` have no `rating` or `pickup` and use a 24-hour `departure` (e.g. "16:30") while seed trips use "4:30 PM". A Min Rating filter excludes trips without a rating, so it excludes every listed trip. (Number conversion and map coordinates are handled by the API layer.)
+- Since CP4 nothing writes `localStorage["emptyTripListings"]`, but Home still resolves requested trip ids against the static seed trips plus that key. A request for a newly listed Supabase trip (id 11+) would therefore not show up in Home's "Your Requests" until Home is migrated in CP5.
+- `createTrip()` does no validation beyond the form's `required` attributes; database constraints (integer `seats`/`fare`, `seats` > 0, `fare` >= 0) are enforced by Supabase and any error text is shown in `ListTrip`'s error alert. This was not exercised in the CP4 tests.
 - `date` is collected on the form but never used when searching.
 - `package.json` name is still `my-app`; README is the default Vite template text.
 
@@ -214,19 +233,21 @@ Re-running `schema.sql` never alters an existing table; column changes need a ma
 1. Read `IMPLEMENTATION_STATUS.md` and this file.
 2. The database steps in section 15 are confirmed done. Confirm the owner has a local `.env.local` with the two `VITE_` values
    (step 7). If not, ask them first.
-3. CP3 is done. Do not start CP4 without the owner's approval. CP4: make `ListTrip` create trips with `createTrip(form)` from
-   `src/lib/api.js` and load "Your Listed Trips" from Supabase (e.g. filter `listTrips()` by `driverKey === getDriverKey()`), replacing
-   the `emptyTripListings` `localStorage` read/write; handle loading and error states; do not import `supabase.js` from pages.
-   Note Home still reads `emptyTripListings`; decide with the owner how to handle that (Home's request lookup belongs to CP5).
-4. Then CP5 to CP8 per `IMPLEMENTATION_STATUS.md`, one at a time, updating both handoff files after each.
+3. CP4 is done (`bf9befb`, `7673e15`). Do not start CP5 without the owner's approval. CP5: migrate the Find Ride request flow
+   (`confirmRequest` in `src/pages/FindRide.jsx`) from `localStorage["emptyTripRequests"]` to Supabase using `createRequest()` from
+   `src/lib/api.js`. Points to settle with the owner first: the `ride_requests` schema requires `passenger_name` and `passenger_phone`
+   (the request modal collects neither today); Home's "Your Requests" and its `setMyRequests` lint error (`Home.jsx:13`) belong to the same area, and
+   `api.js` has no passenger-key request lookup yet; Home no longer sees newly listed trips through `emptyTripListings` (section 11).
+   Do not import `supabase.js` from pages.
+4. Then CP6 to CP8 per `IMPLEMENTATION_STATUS.md`, one at a time, updating both handoff files after each.
 
 ## 13. Commands
 
 ```
 npm ci            # install from lockfile (or: npm install)
 npm run dev       # start Vite dev server
-npm run lint      # eslint .        (currently fails: 2 known errors, see section 11)
-npm run build     # vite build      (currently passes)
+npm run lint      # eslint .        (1 known pre-existing error remains: Home.jsx:13, see section 11)
+npm run build     # vite build      (passed through CP3; re-run to confirm after CP4)
 npm run preview   # serve the production build
 ```
 No automated test suite; testing is manual with two browsers (or one normal plus one private window).
@@ -236,7 +257,7 @@ then run `supabase/schema.sql` and `supabase/seed.sql` with `psql -f`.
 ## 14. Important decisions and assumptions
 
 Decided by the owner: Supabase as the shared backend; keep React + Vite + JSX; follow CP0-CP8 one at a time and wait
-for approval; do not invent extra features; leave the 2 lint errors (deferred to the CP4/CP5 rewrites); keep `src/data/trips.js` unchanged.
+for approval; do not invent extra features; leave the pre-existing lint errors deferred to the page rewrites (the `ListTrip.jsx` one went away in CP4-B; the `Home.jsx` one is deferred to CP5); keep `src/data/trips.js` unchanged.
 
 Decisions made in CP1 (change them if you disagree):
 - Column rename `from`/`to` -> `from_location`/`to_location` (reserved words); mapped back in the API layer.
@@ -266,6 +287,12 @@ Decisions made in CP3 (change them if you disagree):
 - `/find` still searches on button click (not on page load), and filters client-side after fetching all trips with `listTrips()`.
 - On a failed search the error is shown and `searched` is set to false, so an error is never displayed as "No return trips found".
 
+Decisions made in CP4 (change them if you disagree):
+- "Your Listed Trips" is loaded through a dedicated API function, `listMyTrips()` (added in CP4-A), instead of filtering `listTrips()` in the page; `ListTrip.jsx` only calls `createTrip` and `listMyTrips` from `src/lib/api.js`.
+- No `localStorage` replacement was added for the old `emptyTripListings` key.
+- The form is cleared only after `createTrip()` succeeds; a failed save shows an error and keeps the form contents.
+- Home was deliberately not touched in CP4; its request lookup is CP5.
+
 Still open (ask the owner before they matter): seat rule (do pending requests reduce seats?), duplicate requests
 by the same passenger, whether search should filter by date or hide old trips, whether accept/decline is required
 for the demo, hosting target.
@@ -275,8 +302,9 @@ for the demo, hosting target.
 Completed manually by the owner and confirmed: a Supabase project exists; `supabase/schema.sql` ran successfully; `supabase/seed.sql`
 ran successfully; the seed verification query returned 10 rows and 7 columns (10 seeded trips); a test INSERT into `public.trips`
 succeeded. The test insert was done only in the SQL Editor and must NOT be added to `seed.sql`; that test row may still exist in the
-live `trips` table (delete it in the SQL Editor if unwanted). Not recorded as confirmed: the RLS/policy checks (step 5), the
-`ride_requests` test (step 6) and the `.env.local` values (step 7). (The assistant has no access to any Supabase project.)
+live `trips` table (delete it in the SQL Editor if unwanted). The trip(s) created during the CP4 tests are also real rows in the hosted
+`trips` table and, unless deleted, will appear in `/find` for their route (deletion was not recorded). Not recorded as confirmed: the RLS/policy checks (step 5) and the
+`ride_requests` test (step 6). The `.env.local` values (step 7) are evidently set locally, since live reads (CP3) and writes (CP4) work. (The assistant has no access to any Supabase project.)
 
 Steps, for reference and for setting up another project (steps 1-4 are done for the current one):
 1. Create a Supabase project (supabase.com -> New project). Save the database password somewhere private.
