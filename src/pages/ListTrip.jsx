@@ -1,6 +1,13 @@
 import { useState, useEffect } from "react";
 import { locations } from "../data/trips";
-import { createTrip, listMyTrips } from "../lib/api";
+import { createTrip, listMyTrips, listRequestsForDriver } from "../lib/api";
+
+function requestStatusLabel(status) {
+  if (status === "pending") return "✓ Pending confirmation";
+  if (status === "accepted") return "Accepted";
+  if (status === "declined") return "Declined";
+  return status;
+}
 
 function ListTrip() {
   const [form, setForm] = useState({
@@ -20,6 +27,8 @@ function ListTrip() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [loadError, setLoadError] = useState("");
+  const [requests, setRequests] = useState([]);
+  const [requestsError, setRequestsError] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -29,6 +38,20 @@ function ListTrip() {
       })
       .catch((err) => {
         if (!cancelled) setLoadError(err.message || "Could not load your listed trips.");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    listRequestsForDriver()
+      .then((driverRequests) => {
+        if (!cancelled) setRequests(driverRequests);
+      })
+      .catch((err) => {
+        if (!cancelled) setRequestsError(err.message || "Could not load your ride requests.");
       });
     return () => {
       cancelled = true;
@@ -227,6 +250,53 @@ function ListTrip() {
                     "{trip.notes}"
                   </div>
                 )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {(requests.length > 0 || requestsError) && (
+        <div style={{ marginTop: listed.length > 0 ? "40px" : 0 }}>
+          <h2 style={{ fontSize: "20px", color: "#111827", marginBottom: "16px" }}>Ride Requests</h2>
+
+          {requestsError && (
+            <div role="alert" style={{
+              background: "#fef2f2",
+              border: "1px solid #fecaca",
+              color: "#991b1b",
+              padding: "14px 18px",
+              borderRadius: "8px",
+              marginBottom: "24px",
+              fontSize: "14px",
+            }}>
+              Could not load your ride requests: {requestsError}
+            </div>
+          )}
+
+          <div style={{ display: "grid", gap: "12px" }}>
+            {requests.map((request) => (
+              <div key={request.id} style={{
+                background: "white",
+                border: "1px solid #e5e7eb",
+                borderRadius: "12px",
+                padding: "18px",
+              }}>
+                <div style={{ fontWeight: "700", color: "#111827", marginBottom: "6px" }}>
+                  {request.trip.from} → {request.trip.to}
+                </div>
+                <div style={{ fontSize: "13px", color: "#4b5563" }}>
+                  Passenger: {request.passengerName}
+                </div>
+                <div style={{ fontSize: "13px", color: "#4b5563" }}>
+                  Phone: {request.passengerPhone}
+                </div>
+                <div style={{ fontSize: "13px", color: "#4b5563" }}>
+                  Seats requested: {request.seatsRequested}
+                </div>
+                <div style={{ fontSize: "13px", color: "#4b5563" }}>
+                  Status: {requestStatusLabel(request.status)}
+                </div>
               </div>
             ))}
           </div>
