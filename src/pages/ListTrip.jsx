@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { locations } from "../data/trips";
-import { createTrip, listMyTrips, listRequestsForDriver } from "../lib/api";
+import { createTrip, listMyTrips, listRequestsForDriver, updateRequestStatus } from "../lib/api";
 
 function requestStatusLabel(status) {
   if (status === "pending") return "✓ Pending confirmation";
@@ -29,6 +29,8 @@ function ListTrip() {
   const [loadError, setLoadError] = useState("");
   const [requests, setRequests] = useState([]);
   const [requestsError, setRequestsError] = useState("");
+  const [updating, setUpdating] = useState(null);
+  const [actionError, setActionError] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -60,6 +62,22 @@ function ListTrip() {
 
   function handleChange(e) {
     setForm({ ...form, [e.target.name]: e.target.value });
+  }
+
+  async function handleRequestAction(requestId, status) {
+    if (updating) return;
+    setUpdating({ id: requestId, status });
+    setActionError(null);
+    try {
+      const updated = await updateRequestStatus(requestId, status);
+      setRequests((prev) =>
+        prev.map((r) => (r.id === requestId ? { ...r, status: updated.status } : r))
+      );
+    } catch (err) {
+      setActionError({ id: requestId, message: err.message || "Could not update this request." });
+    } finally {
+      setUpdating(null);
+    }
   }
 
   async function handleSubmit(e) {
@@ -297,6 +315,59 @@ function ListTrip() {
                 <div style={{ fontSize: "13px", color: "#4b5563" }}>
                   Status: {requestStatusLabel(request.status)}
                 </div>
+                {request.status === "pending" && (
+                  <div style={{ display: "flex", gap: "10px", marginTop: "12px" }}>
+                    <button
+                      type="button"
+                      onClick={() => handleRequestAction(request.id, "accepted")}
+                      disabled={updating !== null}
+                      style={{
+                        background: "#16a34a",
+                        color: "white",
+                        border: "none",
+                        padding: "8px 18px",
+                        borderRadius: "8px",
+                        fontSize: "14px",
+                        fontWeight: "600",
+                        cursor: updating ? "not-allowed" : "pointer",
+                        opacity: updating ? 0.7 : 1,
+                      }}
+                    >
+                      {updating && updating.id === request.id && updating.status === "accepted" ? "Accepting..." : "Accept"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleRequestAction(request.id, "declined")}
+                      disabled={updating !== null}
+                      style={{
+                        background: "white",
+                        color: "#991b1b",
+                        border: "1px solid #fecaca",
+                        padding: "8px 18px",
+                        borderRadius: "8px",
+                        fontSize: "14px",
+                        fontWeight: "600",
+                        cursor: updating ? "not-allowed" : "pointer",
+                        opacity: updating ? 0.7 : 1,
+                      }}
+                    >
+                      {updating && updating.id === request.id && updating.status === "declined" ? "Declining..." : "Decline"}
+                    </button>
+                  </div>
+                )}
+                {actionError && actionError.id === request.id && (
+                  <div role="alert" style={{
+                    marginTop: "12px",
+                    background: "#fef2f2",
+                    border: "1px solid #fecaca",
+                    color: "#991b1b",
+                    padding: "10px 14px",
+                    borderRadius: "8px",
+                    fontSize: "13px",
+                  }}>
+                    Could not update this request: {actionError.message}
+                  </div>
+                )}
               </div>
             ))}
           </div>

@@ -126,3 +126,42 @@ export async function listRequestsForDriver() {
   )
   return rows.map((row) => ({ ...toRequest(row), trip: toTrip(row.trips) }))
 }
+
+// Set a ride request's status to 'accepted' or 'declined'. Used by the driver inbox.
+// The update only matches a request that is still 'pending' AND belongs to one of the trips listed
+// from this browser (trips.driver_key = this browser's driver key). Returns the updated request with its
+// trip as `trip`. Throws if nothing matched (not found, not yours, or already answered).
+// NOTE: the driver key is a client-supplied value, not authentication, so this scoping is not a server-side
+// security guarantee. It also needs UPDATE permission on ride_requests; the CP1 schema grants only select and insert.
+export async function updateRequestStatus(requestId, status) {
+  if (status !== 'accepted' && status !== 'declined') {
+    throw new Error("Status must be 'accepted' or 'declined'")
+  }
+  const myTrips = unwrap(await supabase.from('trips').select('id').eq('driver_key', getDriverKey()))
+  const tripIds = myTrips.map((trip) => trip.id)
+  if (tripIds.length === 0) throw new Error('Request not found, not yours, or already answered')
+  const rows = unwrap(
+    await supabase
+      .from('ride_requests')
+      .update({ status })
+      .eq('id', requestId)
+      .eq('status', 'pending')
+      .in('trip_id', tripIds)
+      .select('*, trips(*)')
+  )
+  if (!rows || rows.length === 0) throw new Error('Request not found, not yours, or already answered')
+  return { ...toRequest(rows[0]), trip: toTrip(rows[0].trips) }
+}
+
+// Seats already taken by ACCEPTED requests, summed per trip: { [tripId]: seats }.
+// Pending and declined requests take no seats. Used by Find Ride for seats left.
+export async function listAcceptedSeats() {
+  const rows = unwrap(
+    await supabase.from('ride_requests').select('trip_id, seats_requested').eq('status', 'accepted')
+  )
+  const seatsByTrip = {}
+  for (const row of rows) {
+    seatsByTrip[row.trip_id] = (seatsByTrip[row.trip_id] || 0) + row.seats_requested
+  }
+  return seatsByTrip
+}

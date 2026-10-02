@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { locations, locationCoords } from "../data/trips";
-import { listTrips, createRequest } from "../lib/api";
+import { listTrips, createRequest, listAcceptedSeats } from "../lib/api";
 import { MapContainer, TileLayer, Marker, Popup, Polyline } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 
@@ -36,6 +36,7 @@ function FindRide() {
   const [results, setResults] = useState([]);
   const [searched, setSearched] = useState(false);
   const [requested, setRequested] = useState([]);
+  const [acceptedSeats, setAcceptedSeats] = useState({});
   const [modalTrip, setModalTrip] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -49,7 +50,7 @@ function FindRide() {
     setLoading(true);
     setError("");
     try {
-      const allTrips = await listTrips();
+      const [allTrips, seatsTaken] = await Promise.all([listTrips(), listAcceptedSeats()]);
 
       let filtered = allTrips.filter((t) => t.from === from && t.to === to);
       if (maxFare) filtered = filtered.filter((t) => t.fare && t.fare <= Number(maxFare));
@@ -57,6 +58,7 @@ function FindRide() {
       if (minRating) filtered = filtered.filter((t) => t.rating && t.rating >= Number(minRating));
 
       setResults(filtered);
+      setAcceptedSeats(seatsTaken);
       setSearched(true);
     } catch (err) {
       setResults([]);
@@ -130,9 +132,9 @@ function FindRide() {
   }
 
   function availableSeats(trip) {
-    const booked = requested.filter((id) => id === trip.id).length;
+    const taken = acceptedSeats[trip.id] || 0;
     const total = trip.seats || 3;
-    return Math.max(total - booked, 0);
+    return Math.max(total - taken, 0);
   }
 
   return (
