@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { locations, locationCoords } from "../data/trips";
-import { listTrips } from "../lib/api";
+import { listTrips, createRequest } from "../lib/api";
 import { MapContainer, TileLayer, Marker, Popup, Polyline } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 
@@ -39,6 +39,11 @@ function FindRide() {
   const [modalTrip, setModalTrip] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [requesting, setRequesting] = useState(false);
+  const [requestError, setRequestError] = useState("");
+  const [passengerName, setPassengerName] = useState("");
+  const [passengerPhone, setPassengerPhone] = useState("");
+  const [seatsRequested, setSeatsRequested] = useState("1");
 
   async function handleSearch() {
     setLoading(true);
@@ -62,11 +67,66 @@ function FindRide() {
     }
   }
 
-  function confirmRequest() {
-    const updated = [...requested, modalTrip.id];
-    setRequested(updated);
-    localStorage.setItem("emptyTripRequests", JSON.stringify(updated));
+  function openRequestModal(trip) {
+    setRequestError("");
+    setSeatsRequested("1");
+    setModalTrip(trip);
+  }
+
+  function closeModal() {
+    if (requesting) return;
     setModalTrip(null);
+  }
+
+  async function confirmRequest() {
+    if (requesting) return;
+
+    const trip = modalTrip;
+    const name = passengerName.trim();
+    const phone = passengerPhone.trim();
+    const seats = Number(seatsRequested);
+    const seatsLeft = availableSeats(trip);
+
+    if (!name) {
+      setRequestError("Please enter your name.");
+      return;
+    }
+    if (!phone) {
+      setRequestError("Please enter your phone number.");
+      return;
+    }
+    if (!Number.isInteger(seats) || seats < 1) {
+      setRequestError("Seats requested must be a whole number of at least 1.");
+      return;
+    }
+    if (seats > seatsLeft) {
+      setRequestError(
+        seatsLeft < 1
+          ? "No seats are left on this trip."
+          : `Only ${seatsLeft} seat${seatsLeft === 1 ? "" : "s"} left on this trip.`
+      );
+      return;
+    }
+
+    setRequesting(true);
+    setRequestError("");
+    try {
+      await createRequest({
+        tripId: trip.id,
+        passengerName: name,
+        passengerPhone: phone,
+        seatsRequested: seats,
+      });
+      setRequested((prev) => [...prev, trip.id]);
+      setModalTrip(null);
+      setPassengerName("");
+      setPassengerPhone("");
+      setSeatsRequested("1");
+    } catch (err) {
+      setRequestError(err.message || "Could not send your request. Please try again.");
+    } finally {
+      setRequesting(false);
+    }
   }
 
   function availableSeats(trip) {
@@ -169,7 +229,7 @@ function FindRide() {
                     ✓ Request Sent
                   </div>
                 ) : (
-                  <button className="btn btn-primary" onClick={() => setModalTrip(trip)}>
+                  <button className="btn btn-primary" onClick={() => openRequestModal(trip)}>
                     Request Ride
                   </button>
                 )}
@@ -182,7 +242,7 @@ function FindRide() {
       {/* MODAL */}
       {modalTrip && (
         <div
-          onClick={() => setModalTrip(null)}
+          onClick={closeModal}
           style={{
             position: "fixed", inset: 0,
             background: "rgba(28, 25, 23, 0.5)",
@@ -306,6 +366,45 @@ function FindRide() {
               {modalTrip.pickup && <Row label="Pickup point" value={modalTrip.pickup} />}
             </div>
 
+            {/* PASSENGER DETAILS */}
+            <div style={{ display: "grid", gap: "12px", marginBottom: "20px" }}>
+              <div>
+                <label className="field-label">Passenger Name</label>
+                <input
+                  className="field-input"
+                  type="text"
+                  value={passengerName}
+                  onChange={(e) => setPassengerName(e.target.value)}
+                  disabled={requesting}
+                  placeholder="Your name"
+                />
+              </div>
+              <div>
+                <label className="field-label">Phone Number</label>
+                <input
+                  className="field-input"
+                  type="tel"
+                  value={passengerPhone}
+                  onChange={(e) => setPassengerPhone(e.target.value)}
+                  disabled={requesting}
+                  placeholder="Your phone number"
+                />
+              </div>
+              <div>
+                <label className="field-label">Seats Requested</label>
+                <input
+                  className="field-input"
+                  type="number"
+                  min="1"
+                  max={Math.max(availableSeats(modalTrip), 1)}
+                  step="1"
+                  value={seatsRequested}
+                  onChange={(e) => setSeatsRequested(e.target.value)}
+                  disabled={requesting}
+                />
+              </div>
+            </div>
+
             {/* CALL DRIVER */}
             {modalTrip.phone && (
               <a
@@ -328,10 +427,21 @@ function FindRide() {
               </a>
             )}
 
+            {/* REQUEST ERROR */}
+            {requestError && (
+              <div role="alert" style={{
+                marginBottom: "12px", padding: "12px 14px", borderRadius: "8px",
+                background: "#fef2f2", border: "1px solid #fecaca", color: "#991b1b", fontSize: "13px",
+              }}>
+                {requestError}
+              </div>
+            )}
+
             {/* ACTIONS */}
             <div style={{ display: "flex", gap: "10px" }}>
               <button
-                onClick={() => setModalTrip(null)}
+                onClick={closeModal}
+                disabled={requesting}
                 className="btn btn-secondary"
                 style={{ flex: 1 }}
               >
@@ -339,10 +449,11 @@ function FindRide() {
               </button>
               <button
                 onClick={confirmRequest}
+                disabled={requesting}
                 className="btn btn-primary"
                 style={{ flex: 1 }}
               >
-                Confirm Request
+                {requesting ? "Sending..." : "Confirm Request"}
               </button>
             </div>
           </div>
