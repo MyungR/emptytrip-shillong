@@ -1,16 +1,31 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { trips } from "../data/trips";
+import { listMyRequests } from "../lib/api";
+
+function requestStatusLabel(status) {
+  if (status === "pending") return "✓ Pending confirmation";
+  if (status === "accepted") return "Accepted";
+  if (status === "declined") return "Declined";
+  return status;
+}
 
 function Home() {
   const navigate = useNavigate();
   const [myRequests, setMyRequests] = useState([]);
+  const [requestsError, setRequestsError] = useState("");
 
   useEffect(() => {
-    const saved = JSON.parse(localStorage.getItem("emptyTripRequests") || "[]");
-    const allTrips = [...trips, ...JSON.parse(localStorage.getItem("emptyTripListings") || "[]")];
-    const requestedTrips = allTrips.filter((t) => saved.includes(t.id));
-    setMyRequests(requestedTrips);
+    let cancelled = false;
+    listMyRequests()
+      .then((requests) => {
+        if (!cancelled) setMyRequests(requests);
+      })
+      .catch((err) => {
+        if (!cancelled) setRequestsError(err.message || "Could not load your requests.");
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   return (
@@ -125,14 +140,25 @@ function Home() {
       </div>
 
       {/* ================= YOUR REQUESTS ================= */}
-      {myRequests.length > 0 && (
+      {(requestsError || myRequests.length > 0) && (
         <div className="section">
           <div className="eyebrow">Your Requests</div>
           <h2 className="section-title">Trips you've requested.</h2>
 
+          {requestsError && (
+            <div role="alert" style={{
+              marginBottom: "12px", padding: "14px 16px", borderRadius: "8px",
+              background: "#fef2f2", border: "1px solid #fecaca", color: "#991b1b", fontSize: "14px",
+            }}>
+              Could not load your requests: {requestsError}
+            </div>
+          )}
+
           <div style={{ display: "grid", gap: "12px" }}>
-            {myRequests.map((trip) => (
-              <div key={trip.id} style={{
+            {myRequests.map((request) => {
+              const trip = request.trip;
+              return (
+              <div key={request.id} style={{
                 background: "#ffffff",
                 border: "1px solid #e5e7eb",
                 borderLeft: "4px solid #2d5f3f",
@@ -168,10 +194,11 @@ function Home() {
                   fontWeight: "700",
                   letterSpacing: "0.04em",
                 }}>
-                  ✓ Pending confirmation
+                  {requestStatusLabel(request.status)}
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}

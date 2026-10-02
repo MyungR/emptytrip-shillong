@@ -100,6 +100,20 @@ export async function createRequest({ tripId, passengerName, passengerPhone, sea
   return toRequest(unwrap(await supabase.from('ride_requests').insert(row).select().single()))
 }
 
+// Requests made from this browser (passenger key), newest first.
+// Each request includes its trip as `trip` (same trip shape as listTrips()). Used by Home "Your Requests".
+export async function listMyRequests() {
+  const rows = unwrap(
+    await supabase
+      .from('ride_requests')
+      .select('*, trips!inner(*)')
+      .eq('passenger_key', getPassengerKey())
+      .order('created_at', { ascending: false })
+      .order('id', { ascending: false })
+  )
+  return rows.map((row) => ({ ...toRequest(row), trip: toTrip(row.trips) }))
+}
+
 // Requests for trips listed from this browser (driver key), newest first.
 // Each request includes its trip as `trip`.
 export async function listRequestsForDriver() {
